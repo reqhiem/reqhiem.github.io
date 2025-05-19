@@ -2,59 +2,42 @@ name: PR Preview
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - closed
 
-# Permisos necesarios para el preview
-permissions:
-  contents: read
-  pull-requests: write
-  
+concurrency: preview-${{ github.ref }}
+
 jobs:
-  build-preview:
+  deploy-preview:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout your repository using git
         uses: actions/checkout@v4
       
-      # Usar la misma acción que usas para el despliegue principal
+      # Instalar dependencias y construir (si el PR no está cerrado)
       - name: Install, build, and upload your site
+        if: github.event.action != 'closed'
         uses: withastro/action@v3
         with:
-          # Genera la salida con una URL base específica para el preview
           build-args: --base=/pr-preview/pr-${{ github.event.number }}
-      
-      # Guardar el build como un artefacto para poder comentar en el PR
-      - name: Upload artifact for PR comment
-        uses: actions/upload-artifact@v4
-        with:
-          name: pr-preview-${{ github.event.number }}
-          path: dist
-      
-      # Comentar en el PR con un enlace a una versión estática del preview
-      - name: Find Comment
-        uses: peter-evans/find-comment@v2
-        id: fc
-        with:
-          issue-number: ${{ github.event.number }}
-          comment-author: 'github-actions[bot]'
-          body-includes: PR Preview
 
-      - name: Create or update comment
-        uses: peter-evans/create-or-update-comment@v2
+      # Desplegar el preview al branch gh-pages
+      - name: Deploy preview
+        if: github.event.action != 'closed'
+        uses: rossjrw/pr-preview-action@v1
         with:
-          comment-id: ${{ steps.fc.outputs.comment-id }}
-          issue-number: ${{ github.event.number }}
-          body: |
-            ## PR Preview
-            
-            ✅ Preview build completed successfully!
-            
-            Esta PR ha sido construida como preview, pero necesita ser desplegada manualmente.
-            Puedes ver los archivos generados en los artefactos de este workflow.
-            
-            Para probar localmente:
-            1. Descarga el artefacto "pr-preview-${{ github.event.number }}"
-            2. Ejecuta un servidor web local en el directorio descargado
-            
-            (Nota: Si deseas una solución completa de preview con URL, considera usar servicios como Netlify o Vercel que ofrecen previews integrados para PRs)
-          edit-mode: replace
+          source-dir: ./dist/
+          preview-branch: gh-pages
+          umbrella-dir: pr-preview
+      
+      # Eliminar el preview cuando se cierra el PR
+      - name: Remove preview
+        if: github.event.action == 'closed'
+        uses: rossjrw/pr-preview-action@v1
+        with:
+          action: remove
+          preview-branch: gh-pages
+          umbrella-dir: pr-preview
