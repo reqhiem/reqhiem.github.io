@@ -4,11 +4,10 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
 
-# Allow this job to clone the repo and create a deployment
+# Permisos necesarios para el preview
 permissions:
   contents: read
   pull-requests: write
-  deployments: write
   
 jobs:
   build-preview:
@@ -17,38 +16,45 @@ jobs:
       - name: Checkout your repository using git
         uses: actions/checkout@v4
       
+      # Usar la misma acción que usas para el despliegue principal
       - name: Install, build, and upload your site
         uses: withastro/action@v3
         with:
           # Genera la salida con una URL base específica para el preview
           build-args: --base=/pr-preview/pr-${{ github.event.number }}
       
-      - name: Upload artifact
+      # Guardar el build como un artefacto para poder comentar en el PR
+      - name: Upload artifact for PR comment
         uses: actions/upload-artifact@v4
         with:
           name: pr-preview-${{ github.event.number }}
           path: dist
-
-  deploy-preview:
-    needs: build-preview
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: write
-      deployments: write
-      statuses: write
-    
-    steps:
-      - name: Download artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: pr-preview-${{ github.event.number }}
-          path: dist
       
-      - name: Deploy PR Preview
-        uses: rossjrw/pr-preview-action@v1
+      # Comentar en el PR con un enlace a una versión estática del preview
+      - name: Find Comment
+        uses: peter-evans/find-comment@v2
+        id: fc
         with:
-          source-dir: dist
-          preview-branch: pr-previews
-          umbrella-dir: pr-preview
-          action: auto
+          issue-number: ${{ github.event.number }}
+          comment-author: 'github-actions[bot]'
+          body-includes: PR Preview
+
+      - name: Create or update comment
+        uses: peter-evans/create-or-update-comment@v2
+        with:
+          comment-id: ${{ steps.fc.outputs.comment-id }}
+          issue-number: ${{ github.event.number }}
+          body: |
+            ## PR Preview
+            
+            ✅ Preview build completed successfully!
+            
+            Esta PR ha sido construida como preview, pero necesita ser desplegada manualmente.
+            Puedes ver los archivos generados en los artefactos de este workflow.
+            
+            Para probar localmente:
+            1. Descarga el artefacto "pr-preview-${{ github.event.number }}"
+            2. Ejecuta un servidor web local en el directorio descargado
+            
+            (Nota: Si deseas una solución completa de preview con URL, considera usar servicios como Netlify o Vercel que ofrecen previews integrados para PRs)
+          edit-mode: replace
